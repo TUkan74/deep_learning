@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 
+import numpy as np
 import torch
 import torchmetrics
 
@@ -74,11 +75,47 @@ def main(args: argparse.Namespace) -> dict[str, float]:
     #   learning rate to the console and to TensorBoard. Additionally, you can find out
     #   the next learning rate to be used by printing `model.scheduler.get_last_lr()[0]`.
     #   Therefore, after the training, this value should be `args.learning_rate_final`.
-    ...
+    if args.optimizer == "SGD":
+        if args.momentum is None:
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate)
+        else:
+            optimizer = torch.optim.SGD(
+                model.parameters(), lr=args.learning_rate, momentum=args.momentum, nesterov=True)
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    scheduler = None
+    if args.decay is not None:
+        if args.learning_rate_final is None:
+            raise ValueError("Using --decay requires --learning_rate_final.")
+        if args.learning_rate <= 0 or args.learning_rate_final <= 0:
+            raise ValueError("Both --learning_rate and --learning_rate_final must be positive.")
+        if args.learning_rate_final > args.learning_rate:
+            raise ValueError("With --decay, --learning_rate_final must be <= --learning_rate.")
+
+        total_iters = args.epochs * len(train)
+        if total_iters <= 0:
+            raise ValueError("The number of scheduler iterations must be positive.")
+        ratio = args.learning_rate_final / args.learning_rate
+
+        if args.decay == "linear":
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1.0,
+                end_factor=ratio,
+                total_iters=total_iters,
+            )
+        elif args.decay == "exponential":
+            # Compute gamma in float64 to avoid precision drift on long schedules.
+            gamma = float(np.exp(np.log(np.float64(ratio)) / np.float64(total_iters)))
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=float(gamma))
+        else:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=total_iters, eta_min=args.learning_rate_final)
 
     model.configure(
-        optimizer=...,
-        scheduler=...,
+        optimizer=optimizer,
+        scheduler=scheduler,
         loss=torch.nn.CrossEntropyLoss(),
         metrics={"accuracy": torchmetrics.Accuracy("multiclass", num_classes=MNIST.LABELS)},
         logdir=npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args)),

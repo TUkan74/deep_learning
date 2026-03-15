@@ -13,41 +13,54 @@ parser.add_argument("--recodex", default=False, action="store_true", help="Evalu
 
 def main(args: argparse.Namespace) -> tuple[float, float, float]:
     # TODO: Load data distribution, each line containing a datapoint -- a string.
+    data_counts: dict[str, int] = {}
     with open(args.data_path, "r") as data:
         for line in data:
             line = line.rstrip("\n")
             # TODO: Process the line, aggregating data with built-in Python
             # data structures (not NumPy, which is not suitable for incremental
             # addition and string mapping).
+            data_counts[line] = data_counts.get(line, 0) + 1
 
     # TODO: Create a NumPy array containing the data distribution. The
     # NumPy array should contain only data, not any mapping. Alternatively,
     # the NumPy array might be created after loading the model distribution.
+    data_points = list(data_counts.keys())
+    data_distribution = np.array([data_counts[data_point] for data_point in data_points], dtype=np.float64)
+    data_distribution /= np.sum(data_distribution)
 
     # TODO: Load model distribution, each line `string \t probability`.
+    model_distribution_mapping: dict[str, float] = {}
     with open(args.model_path, "r") as model:
         for line in model:
             line = line.rstrip("\n")
             # TODO: Process the line, aggregating using Python data structures.
+            data_point, probability = line.split("\t")
+            model_distribution_mapping[data_point] = float(probability)
 
     # TODO: Create a NumPy array containing the model distribution.
+    model_distribution = np.array(
+        [model_distribution_mapping.get(data_point, 0.0) for data_point in data_points], dtype=np.float64)
 
     # TODO: Compute the entropy H(data distribution). You should not use
     # manual for/while cycles, but instead use the fact that most NumPy methods
     # operate on all elements (for example `*` is vector element-wise multiplication).
-    entropy = ...
+    entropy = -np.sum(data_distribution * np.log(data_distribution))
 
     # TODO: Compute cross-entropy H(data distribution, model distribution).
     # When some data distribution elements are missing in the model distribution,
     # the resulting crossentropy should be `np.inf`.
-    crossentropy = ...
+    if np.any(model_distribution == 0):
+        crossentropy = np.inf
+    else:
+        crossentropy = -np.sum(data_distribution * np.log(model_distribution))
 
     # TODO: Compute KL-divergence D_KL(data distribution, model_distribution),
     # again using `np.inf` when needed.
-    kl_divergence = ...
+    kl_divergence = crossentropy - entropy
 
     # Return the computed values for ReCodEx to validate.
-    return entropy, crossentropy, kl_divergence
+    return float(entropy), float(crossentropy), float(kl_divergence)
 
 
 if __name__ == "__main__":

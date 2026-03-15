@@ -18,8 +18,8 @@ parser.add_argument("--render", default=False, action="store_true", help="Render
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
 # If you add more arguments, ReCodEx will keep them with your default values.
-parser.add_argument("--batch_size", default=..., type=int, help="Batch size.")
-parser.add_argument("--epochs", default=..., type=int, help="Number of epochs.")
+parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
+parser.add_argument("--epochs", default=200, type=int, help="Number of epochs.")
 parser.add_argument("--model", default="gym_cartpole_model.pt", type=str, help="Output model path.")
 
 
@@ -62,11 +62,15 @@ class Model(npfl138.TrainableModule):
         # TODO: Create the model layers, with the last layer having 2 outputs.
         # To store a list of layers, you can use either `torch.nn.Sequential`
         # or `torch.nn.ModuleList`; you should *not* use a Python list.
-        ...
+        self._model = torch.nn.Sequential(
+            torch.nn.Linear(GymCartpoleDataset.FEATURES, 32),
+            torch.nn.Tanh(),
+            torch.nn.Linear(32, 2),
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # TODO: Run your model and return its output.
-        ...
+        return self._model(inputs)
 
 
 def main(args: argparse.Namespace) -> torch.nn.Module | None:
@@ -91,19 +95,37 @@ def main(args: argparse.Namespace) -> torch.nn.Module | None:
         model = Model(args)
 
         # TODO: Configure the model for training.
-        model.configure(...)
+        model.configure(
+            optimizer=torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=1e-3),
+            loss=torch.nn.CrossEntropyLoss(),
+            metrics={"accuracy": torchmetrics.Accuracy("multiclass", num_classes=2)},
+            logdir=npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args)),
+        )
 
         # TODO: Train the model.
         #
         # Note that the `fit` method accepts a `callbacks` argument, which is a list
         # of callables that are called at the end of each epoch, each being called
         # with the model, epoch, and logs (a dictionary with logged losses and metrics).
+        best_score = float("-inf")
+        best_state_dict: dict[str, torch.Tensor] | None = None
+
         def callback(model: Model, epoch: int, logs: dict[str, float]) -> None | Literal[npfl138.STOP_TRAINING]:
+            nonlocal best_score, best_state_dict
             # When you add items to the `logs` dictionary, they will be logged
             # both to the console and to TensorBoard.
-            pass
+            if epoch == 1 or epoch % 5 == 0:
+                score = evaluate_model(model, seed=args.seed + epoch, episodes=20)
+                logs["score"] = score
+                if score > best_score:
+                    best_score = score
+                    best_state_dict = {key: value.detach().to("cpu").clone() for key, value in model.state_dict().items()}
+                if score >= 495:
+                    return npfl138.STOP_TRAINING
 
         model.fit(train, epochs=args.epochs, callbacks=[callback])
+        if best_state_dict is not None:
+            model.load_state_dict(best_state_dict)
 
         # Save the model, both the hyperparameters and the parameters. If you
         # added additional arguments to the `Model` constructor beyond `args`,
