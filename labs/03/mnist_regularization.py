@@ -47,9 +47,11 @@ def main(args: argparse.Namespace) -> dict[str, float]:
 
     model = torch.nn.Sequential()
     model.append(torch.nn.Flatten())
+    model.append(torch.nn.Dropout(args.dropout))
     features = MNIST.C * MNIST.H * MNIST.W
     for hidden_layer in args.hidden_layers:
         model.append(torch.nn.Linear(features, features := hidden_layer))
+        model.append(torch.nn.Dropout(args.dropout))
         model.append(torch.nn.ReLU())
     model.append(torch.nn.Linear(features, features := MNIST.LABELS))
 
@@ -71,12 +73,19 @@ def main(args: argparse.Namespace) -> dict[str, float]:
     #
     # We consider the bias parameters to be all parameters returned by
     # `model.named_parameters()` whose name contains the string "bias".
-    optimizer = ...
+    decay_parameters = []
+    no_decay_parameters = []
+    for name, parameter in model.named_parameters():
+        (no_decay_parameters if "bias" in name else decay_parameters).append(parameter)
+    optimizer = torch.optim.AdamW([
+        {"params": decay_parameters},
+        {"params": no_decay_parameters, "weight_decay": 0},
+    ], weight_decay=args.weight_decay)
 
     # TODO: Implement label smoothing with the given `args.label_smoothing` strength.
     # The easiest approach by far is to use a PyTorch cross-entropy loss function
     # that supports label smoothing.
-    loss = ...
+    loss = torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 
     model.configure(
         optimizer=optimizer,

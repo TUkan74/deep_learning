@@ -38,6 +38,7 @@ def main(args: argparse.Namespace) -> tuple[list[float], list[float]]:
 
     train = torch.utils.data.DataLoader(Dataset(mnist.train), batch_size=args.batch_size, shuffle=True)
     dev = torch.utils.data.DataLoader(Dataset(mnist.dev), batch_size=args.batch_size)
+    dev_labels = mnist.dev.data["labels"]
 
     # Create the models.
     models = []
@@ -60,9 +61,12 @@ def main(args: argparse.Namespace) -> tuple[list[float], list[float]]:
         print("Done")
 
     individual_accuracies, ensemble_accuracies = [], []
+    ensemble_probabilities = None
     for model in range(args.models):
         # TODO: Compute the accuracy on the dev set for the individual `models[model]`.
-        individual_accuracy = ...
+        probabilities = torch.softmax(models[model].predict_tensor(dev, data_with_labels=True, console=0), dim=-1).cpu()
+        individual_accuracy = torch.mean(
+            (torch.argmax(probabilities, dim=-1) == dev_labels).to(torch.float32)).item()
 
         # TODO: Compute the accuracy on the dev set for the ensemble `models[0:model+1]`.
         #
@@ -76,7 +80,9 @@ def main(args: argparse.Namespace) -> tuple[list[float], list[float]]:
         #    on the `dev` dataloader (with `data_with_labels=True` to indicate the dataloader
         #    also contains the labels) and average the predicted distributions. To measure
         #    accuracy, either do it completely manually or use `torchmetrics.Accuracy`.
-        ensemble_accuracy = ...
+        ensemble_probabilities = probabilities if ensemble_probabilities is None else ensemble_probabilities + probabilities
+        ensemble_accuracy = torch.mean(
+            (torch.argmax(ensemble_probabilities / (model + 1), dim=-1) == dev_labels).to(torch.float32)).item()
 
         # Store the accuracies.
         individual_accuracies.append(individual_accuracy)
