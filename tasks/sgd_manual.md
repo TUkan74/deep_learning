@@ -11,7 +11,7 @@ assignment by **manually** computing the gradient.
 While in this assignment we compute the gradient manually, we will nearly always
 use the automatic differentiation. Therefore, the assignment is more of
 a mathematical exercise than a real-world application. Furthermore, we will
-compute the derivatives together on the Mar 06 practicals.
+compute the derivatives together on the Mar 05 practicals.
 
 Start with the
 [sgd_manual.py](https://github.com/ufal/npfl138/tree/master/labs/02/sgd_manual.py)
@@ -25,14 +25,14 @@ evaluation.
 #### Tests Start: sgd_manual_tests
 _Note that your results may be slightly different, depending on your CPU type and whether you use a GPU._
 
-1. `python3 sgd_manual.py --epochs=2 --batch_size=64 --hidden_layer_size=20 --learning_rate=0.1`
+1. `python3 sgd_manual.py --recodex --epochs=2 --batch_size=64 --hidden_layer_size=20 --learning_rate=0.1`
 ```
 Dev accuracy after epoch 1 is 92.98
 Dev accuracy after epoch 2 is 94.42
 Test accuracy after epoch 2 is 92.72
 ```
 
-2. `python3 sgd_manual.py --epochs=2 --batch_size=100 --hidden_layer_size=32 --learning_rate=0.2`
+2. `python3 sgd_manual.py --recodex --epochs=2 --batch_size=100 --hidden_layer_size=32 --learning_rate=0.2`
 ```
 Dev accuracy after epoch 1 is 93.58
 Dev accuracy after epoch 2 is 95.26
