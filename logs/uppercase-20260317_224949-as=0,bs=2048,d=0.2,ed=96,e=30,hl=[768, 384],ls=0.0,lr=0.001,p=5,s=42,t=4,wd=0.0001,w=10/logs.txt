@@ -1,0 +1,17 @@
+Epoch 1/30 22.9s loss=0.0519 accuracy=0.9807 dev:loss=0.0367 dev:accuracy=0.9864
+Epoch 2/30 19.2s loss=0.0372 accuracy=0.9866 dev:loss=0.0322 dev:accuracy=0.9884
+Epoch 3/30 19.1s loss=0.0323 accuracy=0.9885 dev:loss=0.0306 dev:accuracy=0.9889
+Epoch 4/30 19.2s loss=0.0291 accuracy=0.9896 dev:loss=0.0293 dev:accuracy=0.9894
+Epoch 5/30 19.2s loss=0.0267 accuracy=0.9905 dev:loss=0.0289 dev:accuracy=0.9898
+Epoch 6/30 19.2s loss=0.0248 accuracy=0.9911 dev:loss=0.0289 dev:accuracy=0.9898
+Epoch 7/30 19.2s loss=0.0232 accuracy=0.9916 dev:loss=0.0288 dev:accuracy=0.9899
+Epoch 8/30 19.2s loss=0.0219 accuracy=0.9920 dev:loss=0.0287 dev:accuracy=0.9902
+Epoch 9/30 19.2s loss=0.0209 accuracy=0.9924 dev:loss=0.0287 dev:accuracy=0.9903
+Epoch 10/30 19.2s loss=0.0199 accuracy=0.9927 dev:loss=0.0290 dev:accuracy=0.9903
+Epoch 11/30 19.2s loss=0.0190 accuracy=0.9930 dev:loss=0.0287 dev:accuracy=0.9904
+Epoch 12/30 19.2s loss=0.0183 accuracy=0.9933 dev:loss=0.0292 dev:accuracy=0.9905
+Epoch 13/30 19.2s loss=0.0176 accuracy=0.9935 dev:loss=0.0297 dev:accuracy=0.9902
+Epoch 14/30 19.2s loss=0.0170 accuracy=0.9936 dev:loss=0.0298 dev:accuracy=0.9904
+Epoch 15/30 19.2s loss=0.0166 accuracy=0.9939 dev:loss=0.0298 dev:accuracy=0.9902
+Epoch 16/30 19.2s loss=0.0161 accuracy=0.9940 dev:loss=0.0304 dev:accuracy=0.9902
+Epoch 17/30 19.2s loss=0.0156 accuracy=0.9942 dev:loss=0.0301 dev:accuracy=0.9903
