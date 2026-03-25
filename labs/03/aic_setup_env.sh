@@ -18,7 +18,7 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
 fi
 
 "$VENV_DIR/bin/pip" install --upgrade pip
-"$VENV_DIR/bin/pip" install --no-cache-dir --extra-index-url=https://download.pytorch.org/whl/cu126 -e "$PROJECT_DIR/labs"
+
 
 echo "Environment ready:"
 echo "  PROJECT_DIR=$PROJECT_DIR"

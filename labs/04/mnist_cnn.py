@@ -27,6 +27,15 @@ class Dataset(npfl138.TransformedDataset):
         return image, label  # return an (input, target) pair
 
 
+class ResidualBlock(torch.nn.Module):
+    def __init__(self, block: torch.nn.Module) -> None:
+        super().__init__()
+        self._block = block
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return inputs + self._block(inputs)
+
+
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
         # TODO: Add CNN layers specified by `args.cnn`, which contains
@@ -62,9 +71,76 @@ class Model(npfl138.TrainableModule):
         # During `__init__`, these layers do not allocate their parameters, and only do so when
         # they are first called on a tensor, at which point the number of input features is known.
         # During this first call they also change themselves to the corresponding `torch.nn.Linear` etc.
+        architecture = args.cnn or "F"
+        layers: list[torch.nn.Module] = []
+        for specification in self._split_architecture(architecture):
+            layers.extend(self._create_layers(specification))
 
         # TODO: Finally, add the final Linear output layer with `MNIST.LABELS` units.
-        ...
+        layers.append(torch.nn.LazyLinear(MNIST.LABELS))
+        super().__init__(torch.nn.Sequential(*layers))
+
+    @staticmethod
+    def _split_architecture(specification: str) -> list[str]:
+        layers, start, depth = [], 0, 0
+        for i, char in enumerate(specification):
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+            elif char == "," and depth == 0:
+                layers.append(specification[start:i])
+                start = i + 1
+        layers.append(specification[start:])
+        return [layer.strip() for layer in layers if layer.strip()]
+
+    @staticmethod
+    def _parse_padding(padding: str) -> str | int:
+        if padding == "same":
+            return "same"
+        if padding == "valid":
+            return 0
+        return int(padding)
+
+    @classmethod
+    def _create_layers(cls, specification: str) -> list[torch.nn.Module]:
+        if specification.startswith("R-[") and specification.endswith("]"):
+            residual_layers = []
+            for inner_specification in cls._split_architecture(specification[3:-1]):
+                residual_layers.extend(cls._create_layers(inner_specification))
+            return [ResidualBlock(torch.nn.Sequential(*residual_layers))]
+
+        if specification == "F":
+            return [torch.nn.Flatten()]
+
+        parts = specification.split("-")
+        kind = parts[0]
+
+        if kind in {"C", "CB"}:
+            filters, kernel_size, stride, padding = parts[1:]
+            modules: list[torch.nn.Module] = [
+                torch.nn.LazyConv2d(
+                    int(filters), kernel_size=int(kernel_size), stride=int(stride),
+                    padding=cls._parse_padding(padding), bias=kind == "C",
+                )
+            ]
+            if kind == "CB":
+                modules.append(torch.nn.LazyBatchNorm2d())
+            modules.append(torch.nn.ReLU())
+            return modules
+
+        if kind == "M":
+            pool_size, stride = parts[1:]
+            return [torch.nn.MaxPool2d(kernel_size=int(pool_size), stride=int(stride))]
+
+        if kind == "H":
+            hidden_layer_size = parts[1]
+            return [torch.nn.LazyLinear(int(hidden_layer_size)), torch.nn.ReLU()]
+
+        if kind == "D":
+            return [torch.nn.Dropout(float(parts[1]))]
+
+        raise ValueError(f"Unsupported layer specification '{specification}'.")
 
 
 def main(args: argparse.Namespace) -> dict[str, float]:
