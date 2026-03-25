@@ -95,3 +95,66 @@
 - Describe overall architecture of VGG-19 (you do not need to remember the exact
   number of layers/filters, but you should describe the overall order and type
   of layers that are used). [5]
+
+#### Questions@:, Lecture 5 Questions
+- Describe overall architecture of ResNet. You do not need to remember the exact
+  number of layers/filters, but you should draw a bottleneck block (including
+  the applications of BatchNorms and ReLUs) and state how residual connections
+  work when the number of channels increases. [10]
+
+- Draw the original ResNet block (including the exact positions of BatchNorms
+  and ReLUs) and also the improved variant with full pre-activation. [5]
+
+- Compare the bottleneck block of ResNet and ResNeXt architectures (draw the
+  latter using regular convolutions only, i.e., do not use a grouped
+  convolution). [5]
+
+- Describe the CNN regularization method of networks with stochastic depth. [5]
+
+- Compare Cutout and DropBlock. [5]
+
+- Describe in detail how CutMix is performed. [5]
+
+- Describe Squeeze and Excitation applied to a ResNet block. [5]
+
+- Draw the Mobile inverted bottleneck block (including explanation of separable
+  convolutions, the expansion factor, exact positions of BatchNorms and ReLUs,
+  but without describing Squeeze and excitation blocks). [5]
+
+- Assume an input image $I$ of size $H \times W$ with $C$ channels, and
+  a convolutional kernel $K$ with size $N \times M$, stride $S$ and $O$ output
+  channels. Write down (or derive) the equation of transposed convolution
+  (or equivalently backpropagation through a convolution to its inputs). [5]
+
+#### Questions@:, Lecture 6 Questions
+- Describe the differences among semantic segmentation, image classification,
+  object detection, and instance segmentation, and write down which metrics
+  are used for these tasks. [5]
+
+- Write down how $\mathit{AP}_{50}$ is computed given predicted objects
+  and their bounding boxes in the whole dataset. [5]
+
+- Considering a Fast-RCNN architecture, draw overall network architecture,
+  explain what a RoI-pooling layer is, show how the network parametrizes
+  bounding boxes and write down the complete loss. Finally, describe non-maximum
+  suppression and how the Fast-RCNN prediction is performed. [10]
+
+- Considering a Faster-RCNN architecture, describe the region proposal network
+  (what are anchors, architecture including both heads, how are the coordinates
+  of proposals parametrized, what does the complete loss look like). [10]
+
+- Considering Mask-RCNN architecture, describe the additions to a Faster-RCNN
+  architecture (the RoI-Align layer, the new mask-producing head, its loss). [5]
+
+- Write down the focal loss with class weighting, including the commonly used
+  hyperparameter values and how the class weighting works for a given class. [5]
+
+- Draw the overall architecture of a RetinaNet architecture (the computation of
+  $C_1, \ldots, C_7$, the FPN architecture computing $P_1, \ldots, P_7$
+  including the block combining feature maps of different resolutions; the
+  classification and bounding box generation heads, including their output
+  size). Write down the losses for both heads and the overall loss. [10]
+
+- Describe GroupNorm (including its parameters and their size), and compare it
+  to BatchNorm and LayerNorm, discussing both fully connected layers and
+  convolutional layers. [5]

@@ -40,9 +40,9 @@ class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
         # TODO: Add CNN layers specified by `args.cnn`, which contains
         # a comma-separated list of the following layers:
-        # - `C-filters-kernel_size-stride-padding`: Add a convolutional layer with ReLU
-        #   activation and specified number of filters, kernel size, stride and padding.
-        # - `CB-filters-kernel_size-stride-padding`: Same as `C`, but use batch normalization.
+        # - `C-channels-kernel_size-stride-padding`: Add a convolutional layer with ReLU
+        #   activation and specified number of channels, kernel size, stride and padding.
+        # - `CB-channels-kernel_size-stride-padding`: Same as `C`, but use batch normalization.
         #   In detail, start with a convolutional layer **without bias** and activation,
         #   then add a batch normalization layer, and finally the ReLU activation.
         # - `M-pool_size-stride`: Add max pooling with specified size and stride, using
@@ -141,6 +141,13 @@ class Model(npfl138.TrainableModule):
             return [torch.nn.Dropout(float(parts[1]))]
 
         raise ValueError(f"Unsupported layer specification '{specification}'.")
+
+        # TODO: Note that you can construct a `TrainableModule` in two ways:
+        # - either you create a `torch.nn.Module` (or a `torch.nn.Sequential` module) representing
+        #   the whole network and pass it to the `super().__init__` call,
+        # - or you start by calling `super().__init__()` without arguments and then assign the
+        #   layers as attributes of `self`; in this case, you also need to implement the `forward`
+        #   method that performs the forward pass through the model.
 
 
 def main(args: argparse.Namespace) -> dict[str, float]:
