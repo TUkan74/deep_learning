@@ -84,6 +84,15 @@ class Model(npfl138.TrainableModule):
         ))
 
 
+def write_predictions(
+    model: Model, dataloader: torch.utils.data.DataLoader, path: str, *, data_with_labels: bool = True,
+) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as predictions_file:
+        for prediction in model.predict(dataloader, data_with_labels=data_with_labels, console=0):
+            print(prediction.argmax().item(), file=predictions_file)
+
+
 def main(args: argparse.Namespace) -> None:
     # Set the random seed and the number of threads.
     npfl138.startup(args.seed, args.threads)
@@ -110,15 +119,25 @@ def main(args: argparse.Namespace) -> None:
         metrics={"accuracy": torchmetrics.Accuracy("multiclass", num_classes=CIFAR10.LABELS)},
         logdir=logdir,
     )
-    model.fit(train, dev=dev, epochs=args.epochs)
+
+    best_state_dict: dict[str, torch.Tensor] | None = None
+    best_accuracy = float("-inf")
+
+    def callback(model: Model, epoch: int, logs: dict[str, float]):
+        nonlocal best_state_dict, best_accuracy
+
+        if logs["dev:accuracy"] > best_accuracy:
+            best_accuracy = logs["dev:accuracy"]
+            best_state_dict = {key: value.detach().to("cpu").clone() for key, value in model.state_dict().items()}
+
+    model.fit(train, dev=dev, epochs=args.epochs, callbacks=[callback])
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
+        print(f"Using best dev accuracy: {100 * best_accuracy:.2f}%", flush=True)
 
     # Generate test set annotations, but in `logdir` to allow parallel execution.
-    os.makedirs(logdir, exist_ok=True)
-    with open(os.path.join(logdir, "cifar_competition_test.txt"), "w", encoding="utf-8") as predictions_file:
-        # TODO: Perform the prediction on the test data. The line below assumes you have
-        # a dataloader `test` where the individual examples are `(image, target)` pairs.
-        for prediction in model.predict(test, data_with_labels=True):
-            print(prediction.argmax().item(), file=predictions_file)
+    write_predictions(model, dev, os.path.join(logdir, "cifar_competition_dev.txt"))
+    write_predictions(model, test, os.path.join(logdir, "cifar_competition_test.txt"))
 
 
 if __name__ == "__main__":
