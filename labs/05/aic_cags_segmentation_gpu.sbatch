@@ -13,7 +13,7 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$HOME/deep_learning}"
 VENV_DIR="${VENV_DIR:-$HOME/venvs/npfl138-2526}"
 PYTHON_BIN="$VENV_DIR/bin/python"
-ARGS="${ARGS:---batch_size 16 --epochs 20 --learning_rate 1e-3 --decoder_channels 256 --dropout 0.1 --weight_decay 1e-4 --patience 6}"
+ARGS="${ARGS:---batch_size 16 --dataloader_workers 0 --epochs 20 --learning_rate 1e-3 --decoder_channels 256 --dropout 0.1 --weight_decay 1e-4 --patience 6}"
 
 cd "$PROJECT_DIR"
 

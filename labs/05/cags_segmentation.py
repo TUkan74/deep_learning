@@ -16,7 +16,7 @@ from npfl138.datasets.cags import CAGS
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
-parser.add_argument("--dataloader_workers", default=4, type=int, help="Number of dataloader workers.")
+parser.add_argument("--dataloader_workers", default=0, type=int, help="Number of dataloader workers.")
 parser.add_argument("--decode_on_demand", default=False, action="store_true", help="Decode images on demand.")
 parser.add_argument("--decoder_channels", default=256, type=int, help="Channels in the decoder bottleneck.")
 parser.add_argument("--dropout", default=0.1, type=float, help="Dropout in the decoder.")
