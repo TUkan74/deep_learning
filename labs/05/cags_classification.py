@@ -15,41 +15,78 @@ from npfl138.datasets.cags import CAGS
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
+parser.add_argument("--crop_margin", default=0.12, type=float, help="Margin around the mask bounding box.")
 parser.add_argument("--dataloader_workers", default=0, type=int, help="Number of dataloader workers.")
 parser.add_argument("--decode_on_demand", default=False, action="store_true", help="Decode images on demand.")
 parser.add_argument("--dropout", default=0.3, type=float, help="Classifier dropout.")
-parser.add_argument("--epochs", default=3, type=int, help="Number of frozen-backbone epochs.")
-parser.add_argument("--finetune_epochs", default=12, type=int, help="Number of full finetuning epochs.")
-parser.add_argument("--finetune_learning_rate", default=3e-5, type=float, help="Learning rate during finetuning.")
-parser.add_argument("--label_smoothing", default=0.1, type=float, help="Label smoothing.")
-parser.add_argument("--learning_rate", default=3e-3, type=float, help="Learning rate for classifier training.")
+parser.add_argument("--epochs", default=4, type=int, help="Number of frozen-backbone epochs.")
+parser.add_argument("--finetune_epochs", default=20, type=int, help="Number of full finetuning epochs.")
+parser.add_argument("--finetune_learning_rate", default=2e-5, type=float, help="Learning rate during finetuning.")
+parser.add_argument("--label_smoothing", default=0.05, type=float, help="Label smoothing.")
+parser.add_argument("--learning_rate", default=2e-3, type=float, help="Learning rate for classifier training.")
 parser.add_argument("--model_name", default="tf_efficientnetv2_b0.in1k", type=str, help="Timm model name.")
 parser.add_argument("--patience", default=5, type=int, help="Early stopping patience during finetuning.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=0, type=int, help="Maximum number of threads to use.")
+parser.add_argument("--tta", default=True, action=argparse.BooleanOptionalAction, help="Average predictions with horizontal-flip TTA.")
 parser.add_argument("--weight_decay", default=1e-4, type=float, help="AdamW weight decay.")
 
 
 class Dataset(npfl138.TransformedDataset):
     def __init__(
-        self, dataset: CAGS.Dataset, preprocessing, interpolation: v2.InterpolationMode, *, training: bool = False,
+        self,
+        dataset: CAGS.Dataset,
+        preprocessing,
+        interpolation: v2.InterpolationMode,
+        image_size: tuple[int, int],
+        crop_margin: float,
+        *,
+        training: bool = False,
     ) -> None:
         super().__init__(dataset)
         self._preprocessing = preprocessing
+        self._image_size = image_size
+        self._crop_margin = crop_margin
         self._augmentation = v2.Compose([
-            v2.RandomResizedCrop((CAGS.H, CAGS.W), scale=(0.7, 1.0), interpolation=interpolation),
+            v2.RandomResizedCrop(image_size, scale=(0.7, 1.0), interpolation=interpolation),
             v2.RandomHorizontalFlip(),
+            v2.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.15, hue=0.03),
         ]) if training else torch.nn.Identity()
+        self._resize = v2.Resize(image_size, interpolation=interpolation)
 
-    def transform(self, example: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
-        image = self._preprocessing(self._augmentation(example["image"]))
-        return image, example["label"]
+    def _crop_from_mask(self, image: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        mask_indices = torch.nonzero(mask[0] >= 0.5, as_tuple=False)
+        if len(mask_indices) == 0:
+            return image
+
+        top_left = mask_indices.min(dim=0).values
+        bottom_right = mask_indices.max(dim=0).values + 1
+
+        height = bottom_right[0] - top_left[0]
+        width = bottom_right[1] - top_left[1]
+        margin_y = max(1, int(round(height.item() * self._crop_margin)))
+        margin_x = max(1, int(round(width.item() * self._crop_margin)))
+
+        top = max(0, int(top_left[0]) - margin_y)
+        left = max(0, int(top_left[1]) - margin_x)
+        bottom = min(image.shape[-2], int(bottom_right[0]) + margin_y)
+        right = min(image.shape[-1], int(bottom_right[1]) + margin_x)
+        return image[:, top:bottom, left:right]
+
+    def transform(self, example: dict[str, torch.Tensor]) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        full_image = example["image"]
+        crop_image = self._crop_from_mask(example["image"], example["mask"])
+
+        full_image = self._preprocessing(self._augmentation(full_image))
+        crop_image = self._preprocessing(self._augmentation(self._resize(crop_image)))
+        return (full_image, crop_image), example["label"]
 
 
 class Model(npfl138.TrainableModule):
     def __init__(self, backbone: torch.nn.Module, args: argparse.Namespace) -> None:
         super().__init__()
         self.backbone = backbone
+        self.args = args
         self.classifier = torch.nn.Sequential(
             torch.nn.Dropout(args.dropout),
             torch.nn.Linear(self.backbone.num_features, CAGS.LABELS),
@@ -68,11 +105,23 @@ class Model(npfl138.TrainableModule):
             self.backbone.eval()
         return self
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
+    def _encode(self, images: torch.Tensor) -> torch.Tensor:
         features = self.backbone(images)
         if features.ndim > 2:
             features = features.mean(dim=(-2, -1))
         return self.classifier(features)
+
+    def forward(self, images: torch.Tensor, cropped_images: torch.Tensor) -> torch.Tensor:
+        return 0.5 * (self._encode(images) + self._encode(cropped_images))
+
+    def predict_step(self, xs):
+        with torch.no_grad():
+            images, cropped_images = xs
+            logits = self(images, cropped_images)
+            if self.args.tta:
+                flipped_logits = self(torch.flip(images, dims=[-1]), torch.flip(cropped_images, dims=[-1]))
+                logits = 0.5 * (logits + flipped_logits)
+            return logits
 
 
 def write_predictions(model: Model, dataloader: torch.utils.data.DataLoader, path: str) -> None:
@@ -103,6 +152,7 @@ def main(args: argparse.Namespace) -> None:
     backbone = timm.create_model(args.model_name, pretrained=True, num_classes=0)
 
     interpolation = v2.InterpolationMode(backbone.pretrained_cfg["interpolation"])
+    image_size = tuple(backbone.pretrained_cfg.get("input_size", (3, CAGS.H, CAGS.W))[1:])
 
     # Create a simple preprocessing performing necessary normalization.
     preprocessing = v2.Compose([
@@ -110,13 +160,19 @@ def main(args: argparse.Namespace) -> None:
         v2.Normalize(mean=backbone.pretrained_cfg["mean"], std=backbone.pretrained_cfg["std"]),
     ])
 
-    train = Dataset(cags.train, preprocessing, interpolation, training=True).dataloader(
+    train = Dataset(
+        cags.train, preprocessing, interpolation, image_size, args.crop_margin, training=True,
+    ).dataloader(
         batch_size=args.batch_size, shuffle=True, num_workers=args.dataloader_workers,
     )
-    dev = Dataset(cags.dev, preprocessing, interpolation).dataloader(
+    dev = Dataset(
+        cags.dev, preprocessing, interpolation, image_size, args.crop_margin,
+    ).dataloader(
         batch_size=args.batch_size, num_workers=args.dataloader_workers,
     )
-    test = Dataset(cags.test, preprocessing, interpolation).dataloader(
+    test = Dataset(
+        cags.test, preprocessing, interpolation, image_size, args.crop_margin,
+    ).dataloader(
         batch_size=args.batch_size, num_workers=args.dataloader_workers,
     )
 
