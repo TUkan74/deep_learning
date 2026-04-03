@@ -37,6 +37,10 @@ class Convolution:
         self._kernel = torch.nn.Parameter(torch.randn(kernel_size, kernel_size, input_shape[2], filters) * 0.1)
         self._bias = torch.nn.Parameter(torch.zeros(filters))
 
+    def _extract_patches(self, inputs: torch.Tensor) -> torch.Tensor:
+        patches = inputs.unfold(1, self._kernel_size, self._stride).unfold(2, self._kernel_size, self._stride)
+        return patches.permute(0, 1, 2, 4, 5, 3).contiguous()
+
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # TODO: Compute the forward propagation through the convolution
         # with ReLU activation, and return the result.
@@ -45,7 +49,9 @@ class Convolution:
         # manually iterate through the individual pixels, batch examples,
         # input filters, or output filters. However, you can manually
         # iterate through the kernel size.
-        output = ...
+        patches = self._extract_patches(inputs)
+        output = torch.einsum("nhwklc,klcf->nhwf", patches, self._kernel) + self._bias
+        output = torch.relu(output)
 
         # If requested, verify that `output` contains a correct value.
         if self._verify:
@@ -65,7 +71,24 @@ class Convolution:
         # - the `inputs` layer,
         # - `self._kernel`,
         # - `self._bias`.
-        inputs_gradient, kernel_gradient, bias_gradient = ..., ..., ...
+        pre_activation_gradient = outputs_gradient * (outputs > 0)
+        patches = self._extract_patches(inputs)
+
+        bias_gradient = pre_activation_gradient.sum(dim=(0, 1, 2))
+        kernel_gradient = torch.einsum("nhwklc,nhwf->klcf", patches, pre_activation_gradient)
+
+        inputs_gradient = torch.zeros_like(inputs)
+        output_height, output_width = pre_activation_gradient.shape[1:3]
+        for kernel_row in range(self._kernel_size):
+            for kernel_col in range(self._kernel_size):
+                inputs_gradient[
+                    :,
+                    kernel_row:kernel_row + self._stride * output_height:self._stride,
+                    kernel_col:kernel_col + self._stride * output_width:self._stride,
+                    :,
+                ] += torch.einsum(
+                    "nhwf,cf->nhwc", pre_activation_gradient, self._kernel[kernel_row, kernel_col]
+                )
 
         # If requested, verify that the three computed gradients are correct.
         if self._verify:

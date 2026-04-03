@@ -66,8 +66,22 @@ def bboxes_to_rcnn(anchors: torch.Tensor, bboxes: torch.Tensor) -> torch.Tensor:
     If the `anchors.shape` is `[anchors_len, 4]` and `bboxes.shape` is `[anchors_len, 4]`,
     the output shape is `[anchors_len, 4]`.
     """
-    # TODO: Implement according to the docstring.
-    raise NotImplementedError()
+    anchor_heights = anchors[..., BOTTOM] - anchors[..., TOP]
+    anchor_widths = anchors[..., RIGHT] - anchors[..., LEFT]
+    bbox_heights = bboxes[..., BOTTOM] - bboxes[..., TOP]
+    bbox_widths = bboxes[..., RIGHT] - bboxes[..., LEFT]
+
+    anchor_y_centers = (anchors[..., TOP] + anchors[..., BOTTOM]) / 2
+    anchor_x_centers = (anchors[..., LEFT] + anchors[..., RIGHT]) / 2
+    bbox_y_centers = (bboxes[..., TOP] + bboxes[..., BOTTOM]) / 2
+    bbox_x_centers = (bboxes[..., LEFT] + bboxes[..., RIGHT]) / 2
+
+    return torch.stack([
+        (bbox_y_centers - anchor_y_centers) / anchor_heights,
+        (bbox_x_centers - anchor_x_centers) / anchor_widths,
+        torch.log(bbox_heights / anchor_heights),
+        torch.log(bbox_widths / anchor_widths),
+    ], dim=-1)
 
 
 def bboxes_from_rcnn(anchors: torch.Tensor, rcnns: torch.Tensor) -> torch.Tensor:
@@ -76,8 +90,22 @@ def bboxes_from_rcnn(anchors: torch.Tensor, rcnns: torch.Tensor) -> torch.Tensor
     If the `anchors.shape` is `[anchors_len, 4]` and `rcnns.shape` is `[anchors_len, 4]`,
     the output shape is `[anchors_len, 4]`.
     """
-    # TODO: Implement according to the docstring.
-    raise NotImplementedError()
+    anchor_heights = anchors[..., BOTTOM] - anchors[..., TOP]
+    anchor_widths = anchors[..., RIGHT] - anchors[..., LEFT]
+    anchor_y_centers = (anchors[..., TOP] + anchors[..., BOTTOM]) / 2
+    anchor_x_centers = (anchors[..., LEFT] + anchors[..., RIGHT]) / 2
+
+    bbox_y_centers = rcnns[..., 0] * anchor_heights + anchor_y_centers
+    bbox_x_centers = rcnns[..., 1] * anchor_widths + anchor_x_centers
+    bbox_heights = torch.exp(rcnns[..., 2]) * anchor_heights
+    bbox_widths = torch.exp(rcnns[..., 3]) * anchor_widths
+
+    return torch.stack([
+        bbox_y_centers - bbox_heights / 2,
+        bbox_x_centers - bbox_widths / 2,
+        bbox_y_centers + bbox_heights / 2,
+        bbox_x_centers + bbox_widths / 2,
+    ], dim=-1)
 
 
 def bboxes_training(
@@ -112,16 +140,33 @@ def bboxes_training(
       (again the gold object with the smaller index if there are several),
       and if the IoU is >= iou_threshold, assign the object to the anchor.
     """
-    # TODO: First, for each gold object, assign it to an anchor with the
-    # largest IoU (the anchor with smaller index if there are several). In case
-    # several gold objects are assigned to a single anchor, use the gold object
-    # with the smaller index.
+    anchors_len = len(anchors)
+    anchor_classes = torch.zeros(anchors_len, dtype=gold_classes.dtype, device=anchors.device)
+    anchor_bboxes = torch.zeros(anchors_len, 4, dtype=anchors.dtype, device=anchors.device)
+    if len(gold_bboxes) == 0:
+        return anchor_classes, anchor_bboxes
 
-    # TODO: For each unused anchor, find the gold object with the largest IoU
-    # (again the gold object with the smaller index if there are several),
-    # and if the IoU is >= threshold, assign the object to the anchor.
+    ious = bboxes_iou(anchors[:, None, :], gold_bboxes[None, :, :])
+    assigned_gold = torch.full([anchors_len], -1, dtype=torch.int64, device=anchors.device)
 
-    anchor_classes, anchor_bboxes = ..., ...
+    # First, assign every gold bbox to its best anchor. Iterating in the natural
+    # order guarantees the required smaller-gold-index tie break on collisions.
+    best_anchors = torch.argmax(ious, dim=0)
+    for gold_index, anchor_index in enumerate(best_anchors.tolist()):
+        if assigned_gold[anchor_index] < 0:
+            assigned_gold[anchor_index] = gold_index
+
+    # Then assign still-unused anchors with sufficiently high IoU.
+    best_ious, best_gold_indices = torch.max(ious, dim=1)
+    unused = assigned_gold < 0
+    assignable = unused & (best_ious >= iou_threshold)
+    assigned_gold[assignable] = best_gold_indices[assignable]
+
+    positive = assigned_gold >= 0
+    if torch.any(positive):
+        matched_gold = assigned_gold[positive]
+        anchor_classes[positive] = gold_classes[matched_gold] + 1
+        anchor_bboxes[positive] = bboxes_to_rcnn(anchors[positive], gold_bboxes[matched_gold])
 
     return anchor_classes, anchor_bboxes
 
