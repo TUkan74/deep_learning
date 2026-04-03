@@ -142,7 +142,8 @@ def bboxes_training(
     """
     anchors_len = len(anchors)
     anchor_classes = torch.zeros(anchors_len, dtype=gold_classes.dtype, device=anchors.device)
-    anchor_bboxes = torch.zeros(anchors_len, 4, dtype=anchors.dtype, device=anchors.device)
+    anchor_bbox_dtype = gold_bboxes.dtype if gold_bboxes.is_floating_point() else torch.float32
+    anchor_bboxes = torch.zeros(anchors_len, 4, dtype=anchor_bbox_dtype, device=anchors.device)
     if len(gold_bboxes) == 0:
         return anchor_classes, anchor_bboxes
 
