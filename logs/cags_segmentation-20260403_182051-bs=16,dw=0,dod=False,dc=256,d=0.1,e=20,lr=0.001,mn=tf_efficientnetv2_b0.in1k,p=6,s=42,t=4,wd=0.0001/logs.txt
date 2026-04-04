@@ -1,0 +1,7 @@
+Epoch 1/20 19.9s lr=0.0010 loss=0.3661 iou=0.8166 dev:loss=0.3602 dev:iou=0.8519
+Epoch 2/20 18.0s lr=0.0010 loss=0.2288 iou=0.8785 dev:loss=0.3641 dev:iou=0.8459
+Epoch 3/20 18.1s lr=0.0009 loss=0.2069 iou=0.8865 dev:loss=0.2250 dev:iou=0.8877
+Epoch 4/20 18.0s lr=0.0009 loss=0.1861 iou=0.8958 dev:loss=0.2150 dev:iou=0.8909
+Epoch 5/20 18.0s lr=0.0009 loss=0.1720 iou=0.9001 dev:loss=0.2423 dev:iou=0.8869
+Epoch 6/20 18.0s lr=0.0008 loss=0.1553 iou=0.9074 dev:loss=0.2001 dev:iou=0.8910
+Epoch 7/20 18.0s lr=0.0007 loss=0.1520 iou=0.9084 dev:loss=0.2125 dev:iou=0.8939

@@ -1,0 +1,4 @@
+Epoch 1/4 28.2s lr=0.0017 loss=1.5184 accuracy=0.7502 dev:loss=0.7048 dev:accuracy=0.9314
+Epoch 2/4 26.3s lr=0.0010 loss=0.6313 accuracy=0.9444 dev:loss=0.6206 dev:accuracy=0.9542
+Epoch 3/4 24.2s lr=0.0003 loss=0.5712 accuracy=0.9613 dev:loss=0.6042 dev:accuracy=0.9510
+Epoch 4/4 24.3s lr=0.0000 loss=0.5526 accuracy=0.9631 dev:loss=0.6020 dev:accuracy=0.9510
