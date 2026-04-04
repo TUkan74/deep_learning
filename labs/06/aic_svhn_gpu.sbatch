@@ -13,7 +13,7 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$HOME/deep_learning}"
 VENV_DIR="${VENV_DIR:-$HOME/venvs/npfl138-2526}"
 PYTHON_BIN="$VENV_DIR/bin/python"
-ARGS="${ARGS:---batch_size 32 --dataloader_workers 0 --epochs 3 --finetune_epochs 12 --learning_rate 3e-4 --backbone_learning_rate 3e-5 --feature_level 2 --head_channels 256 --anchor_sizes 18,28,42,60 --anchor_ratios 0.6,1.0,1.6 --score_threshold 0.25 --nms_threshold 0.35 --pre_nms_topk 500 --max_detections 6 --weight_decay 1e-4 --patience 4}"
+ARGS="${ARGS:---batch_size 4 --dataloader_workers 0 --epochs 2 --finetune_epochs 18 --learning_rate 5e-4 --backbone_learning_rate 5e-5 --image_size 384 --anchor_sizes 12,24,48,96,192 --anchor_ratios 0.5,1.0,2.0 --score_threshold 0.35 --nms_threshold 0.4 --max_detections 6 --raw_detections_per_image 20 --weight_decay 1e-4 --patience 5}"
 
 cd "$PROJECT_DIR"
 
