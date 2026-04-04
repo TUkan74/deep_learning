@@ -125,14 +125,38 @@ def create_model(args: argparse.Namespace) -> tuple[torch.nn.Module, bool]:
         model = detector(**detector_kwargs)
         pretrained_loaded = False
 
+    expected_anchors = model.rpn.anchor_generator.num_anchors_per_location()
+    if len(set(expected_anchors)) != 1:
+        raise ValueError(f"Unsupported detector anchor layout {expected_anchors}.")
+
+    if expected_anchors[0] % len(anchor_ratios):
+        raise ValueError(
+            f"Detector expects {expected_anchors[0]} anchors/location, which is incompatible "
+            f"with {len(anchor_ratios)} ratios."
+        )
+
+    sizes_per_level = expected_anchors[0] // len(anchor_ratios)
+    if sizes_per_level == 1:
+        if len(anchor_sizes) != len(expected_anchors):
+            raise ValueError(
+                f"Detector expects {len(expected_anchors)} anchor sizes, got {len(anchor_sizes)}."
+            )
+        compatible_sizes = anchor_sizes
+    else:
+        if len(anchor_sizes) != sizes_per_level:
+            raise ValueError(
+                f"Detector expects {sizes_per_level} anchor sizes per FPN level, got {len(anchor_sizes)}."
+            )
+        compatible_sizes = tuple(tuple(size for (size,) in anchor_sizes) for _ in expected_anchors)
+
     anchor_generator = AnchorGenerator(
-        sizes=anchor_sizes, aspect_ratios=(anchor_ratios,) * len(anchor_sizes),
+        sizes=compatible_sizes, aspect_ratios=(anchor_ratios,) * len(expected_anchors),
     )
-    if anchor_generator.num_anchors_per_location() != model.rpn.anchor_generator.num_anchors_per_location():
+    if anchor_generator.num_anchors_per_location() != expected_anchors:
         raise ValueError(
             "Custom anchors must preserve the detector's anchors-per-location layout. "
             f"Requested {anchor_generator.num_anchors_per_location()}, "
-            f"expected {model.rpn.anchor_generator.num_anchors_per_location()}."
+            f"expected {expected_anchors}."
         )
     model.rpn.anchor_generator = anchor_generator
 
