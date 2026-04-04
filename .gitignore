@@ -1,2 +1,10 @@
 /.venv02/
-
+/logs/
+cifar_*.out
+cifar_*.err
+svhn_*.out
+svhn_*.err
+uppercase_*.out
+uppercase_*.err
+*.pt
+*.npz

@@ -419,7 +419,7 @@ def main(args: argparse.Namespace) -> None:
     npfl138.startup(args.seed, args.threads)
     npfl138.global_keras_initializers()
 
-    logdir = npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args))
+    logdir = npfl138.format_logdir("logs/{file-}{timestamp}", **vars(args))
 
     svhn = SVHN(decode_on_demand=args.decode_on_demand)
 
