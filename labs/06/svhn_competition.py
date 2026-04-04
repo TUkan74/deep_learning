@@ -96,9 +96,6 @@ def move_targets_to_device(
 def create_model(args: argparse.Namespace) -> tuple[torch.nn.Module, bool]:
     anchor_sizes = tuple((size,) for size in parse_csv_ints(args.anchor_sizes))
     anchor_ratios = tuple(parse_csv_floats(args.anchor_ratios))
-    anchor_generator = AnchorGenerator(
-        sizes=anchor_sizes, aspect_ratios=(anchor_ratios,) * len(anchor_sizes),
-    )
 
     if args.model_name == "fasterrcnn_resnet50_fpn_v2":
         detector = fasterrcnn_resnet50_fpn_v2
@@ -117,7 +114,6 @@ def create_model(args: argparse.Namespace) -> tuple[torch.nn.Module, bool]:
         "box_score_thresh": 0.0,
         "box_nms_thresh": args.nms_threshold,
         "box_detections_per_img": args.raw_detections_per_image,
-        "rpn_anchor_generator": anchor_generator,
     }
     try:
         model = detector(**detector_kwargs)
@@ -128,6 +124,17 @@ def create_model(args: argparse.Namespace) -> tuple[torch.nn.Module, bool]:
         detector_kwargs["weights"] = None
         model = detector(**detector_kwargs)
         pretrained_loaded = False
+
+    anchor_generator = AnchorGenerator(
+        sizes=anchor_sizes, aspect_ratios=(anchor_ratios,) * len(anchor_sizes),
+    )
+    if anchor_generator.num_anchors_per_location() != model.rpn.anchor_generator.num_anchors_per_location():
+        raise ValueError(
+            "Custom anchors must preserve the detector's anchors-per-location layout. "
+            f"Requested {anchor_generator.num_anchors_per_location()}, "
+            f"expected {model.rpn.anchor_generator.num_anchors_per_location()}."
+        )
+    model.rpn.anchor_generator = anchor_generator
 
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, SVHN.LABELS + 1)
