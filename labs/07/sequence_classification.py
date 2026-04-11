@@ -56,19 +56,27 @@ class Model(npfl138.TrainableModule):
 
         # TODO: The sequence will be processed using an RNN with type `args.rnn` (LSTM/GRU/RNN)
         # and with dimensionality `args.rnn_dim`.
-        ...
+        self._rnn = getattr(torch.nn, args.rnn)(args.sequence_dim, args.rnn_dim, batch_first=True)
 
         # TODO: If `args.hidden_layer` is nonzero, the result of the RNN should be processed
         # by a fully connected layer with `args.hidden_layer` units and ReLU activation.
-        ...
+        self._hidden_layer = torch.nn.Sequential(
+            torch.nn.Linear(args.rnn_dim, args.hidden_layer),
+            torch.nn.ReLU(),
+        ) if args.hidden_layer else torch.nn.Identity()
 
         # TODO: The predictions are generated using a fully connected output layer
         # with one output and sigmoid activation.
-        ...
+        self._output_layer = torch.nn.Sequential(
+            torch.nn.Linear(args.hidden_layer or args.rnn_dim, 1),
+            torch.nn.Sigmoid(),
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # TODO: Process the input sequence through the RNN and the other layers.
-        ...
+        hidden, _ = self._rnn(inputs)
+        hidden = self._hidden_layer(hidden)
+        return self._output_layer(hidden)
 
 
 def main(args: argparse.Namespace) -> dict[str, float]:
@@ -95,7 +103,7 @@ def main(args: argparse.Namespace) -> dict[str, float]:
         def gradient_clipping(optimizer, _args, _kwargs):
             # TODO: Implement gradient clipping using `torch.nn.utils.clip_grad_norm_`,
             # clipping the gradient if its L2 norm is larger than `args.clip_gradient`.
-            ...
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_gradient)
         optimizer.register_step_pre_hook(gradient_clipping)
 
     model.configure(
