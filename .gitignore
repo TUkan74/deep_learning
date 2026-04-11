@@ -1,5 +1,4 @@
 /.venv02/
-/logs/
 cifar_*.out
 cifar_*.err
 svhn_*.out
