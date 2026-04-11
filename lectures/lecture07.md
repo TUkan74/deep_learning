@@ -3,8 +3,15 @@
 #### Slides: https://ufal.mff.cuni.cz/~straka/courses/npfl138/2526/slides/?07
 #### Reading: https://ufal.mff.cuni.cz/~straka/courses/npfl138/2526/slides.pdf/npfl138-2526-07.pdf, PDF Slides
 #### Video: https://lectures.ms.mff.cuni.cz/video/rec/npfl138/2526/npfl138-2526-07-czech.mp4, CZ Lecture
+#### Video: https://lectures.ms.mff.cuni.cz/video/rec/npfl138/2526/npfl138-2526-07-czech.cnn_manual.mp4, CZ cnn_manual
+#### Video: https://lectures.ms.mff.cuni.cz/video/rec/npfl138/2526/npfl138-2526-07-czech.practicals.mp4, CZ Practicals
 #### Video: https://lectures.ms.mff.cuni.cz/video/rec/npfl138/2526/npfl138-2526-07-english.mp4, EN Lecture
+#### Video: https://lectures.ms.mff.cuni.cz/video/rec/npfl138/2526/npfl138-2526-07-english.practicals.mp4, EN Practicals
 #### Questions: #lecture_7_questions
+#### Lecture assignment: sequence_classification
+#### Lecture assignment: tagger_we
+#### Lecture assignment: tagger_cle
+#### Lecture assignment: tagger_competition
 
 - Sequence modelling using Recurrent Neural Networks (RNN) [Chapter 10 until Section 10.2.1 (excluding) of DLB]
 - The challenge of long-term dependencies [Section 10.7 of DLB]

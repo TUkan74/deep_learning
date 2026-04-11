@@ -15,16 +15,14 @@ The dataset is split into:
 - `test`: 612 images for testing.
 """
 
-import os
-import sys
 from typing import Sequence, TextIO, TypedDict
-import urllib.request
 
 
 import torch
 import torchvision
 
 from .. import metrics
+from .downloader import download_url_to_file
 from .tfrecord_dataset import TFRecordDataset
 
 
@@ -82,12 +80,7 @@ class CAGS:
     def __init__(self, decode_on_demand: bool = False) -> None:
         """Load the CAGS dataset, downloading it if necessary."""
         for dataset, size in [("train", 2_142), ("dev", 306), ("test", 612)]:
-            path = f"cags.{dataset}.tfrecord"
-            if not os.path.exists(path):
-                print(f"Downloading file {path}...", file=sys.stderr)
-                urllib.request.urlretrieve(f"{self.URL}/{path}", filename=f"{path}.tmp")
-                os.rename(f"{path}.tmp", path)
-
+            path = download_url_to_file(self.URL, f"cags.{dataset}.tfrecord")
             setattr(self, dataset, self.Dataset(path, size, decode_on_demand))
 
     train: Dataset
@@ -115,7 +108,7 @@ class CAGS:
         """Evaluate the `predictions` labels against the gold dataset.
 
         Returns:
-          accuracy: The average accuracy of the predicted labels in percentages.
+          accuracy: The average accuracy of the predicted labels.
         """
         gold = [int(example["label"]) for example in gold_dataset]
 
@@ -131,7 +124,7 @@ class CAGS:
         """Evaluate the file with label predictions against the gold dataset.
 
         Returns:
-          accuracy: The average accuracy of the predicted labels in percentages.
+          accuracy: The average accuracy of the predicted labels.
         """
         predictions = [int(line) for line in predictions_file]
         return CAGS.evaluate_classification(gold_dataset, predictions)
@@ -141,7 +134,7 @@ class CAGS:
         """Evaluate the `predictions` masks against the gold dataset.
 
         Returns:
-          iou: The average iou of the predicted masks in percentages.
+          iou: The average iou of the predicted masks.
         """
         gold = [example["mask"] for example in gold_dataset]
 
@@ -174,7 +167,7 @@ class CAGS:
         """Evaluate the file with mask predictions against the gold dataset.
 
         Returns:
-          iou: The average iou of the predicted masks in percentages.
+          iou: The average iou of the predicted masks.
         """
         return CAGS.evaluate_segmentation(gold_dataset, CAGS.load_segmentation_file(predictions_file))
 
