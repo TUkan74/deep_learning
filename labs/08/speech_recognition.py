@@ -93,7 +93,7 @@ class Model(npfl138.TrainableModule):
         self.metrics["edit_distance"].update(predictions, gold)
         return {"edit_distance": self.metrics["edit_distance"]}
 
-    def predict_step(self, xs, as_numpy=True):
+    def predict_step(self, xs):
         with torch.no_grad():
             # Perform constrained decoding.
             yield from self.ctc_decoding(self.forward(*xs), *xs)
@@ -135,9 +135,9 @@ def main(args: argparse.Namespace) -> None:
     # Load the data.
     common_voice = CommonVoiceCs()
 
-    train = TrainableDataset(common_voice.train).dataloader(args.batch_size, shuffle=True)
-    dev = TrainableDataset(common_voice.dev).dataloader(args.batch_size)
-    test = TrainableDataset(common_voice.test).dataloader(args.batch_size)
+    train = Dataset(common_voice.train).dataloader(args.batch_size, shuffle=True)
+    dev = Dataset(common_voice.dev).dataloader(args.batch_size)
+    test = Dataset(common_voice.test).dataloader(args.batch_size)
 
     # TODO: Create the model and train it. The `Model.compute_metrics` method assumes you
     # passed the following metric to the `configure` method under the name "edit_distance":
