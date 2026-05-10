@@ -110,8 +110,14 @@ def main(args: argparse.Namespace) -> None:
     )
     model.fit(train, dev=dev, epochs=args.epochs)
 
-    # Generate test set annotations, but in `logdir` to allow parallel execution.
+    # Generate dev and test set annotations, but in `logdir` to allow parallel execution.
     os.makedirs(logdir, exist_ok=True)
+    with open(os.path.join(logdir, "sentiment_analysis_dev.txt"), "w", encoding="utf-8") as predictions_file:
+        predictions = model.predict(dev, data_with_labels=True)
+
+        for document_logits in predictions:
+            print(facebook.train.label_vocab.string(document_logits.argmax().item()), file=predictions_file)
+
     with open(os.path.join(logdir, "sentiment_analysis.txt"), "w", encoding="utf-8") as predictions_file:
         # TODO: Predict the tags on the test set.
         predictions = model.predict(test)

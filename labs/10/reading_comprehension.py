@@ -265,8 +265,16 @@ def main(args: argparse.Namespace) -> None:
         model.load_state_dict(best_state)
         print(f"Using best dev accuracy: {100 * best_accuracy:.2f}%")
 
-    # Generate test set annotations, but in `logdir` to allow parallel execution.
+    # Generate dev and test set annotations, but in `logdir` to allow parallel execution.
     os.makedirs(logdir, exist_ok=True)
+    with open(os.path.join(logdir, "reading_comprehension_dev.txt"), "w", encoding="utf-8") as predictions_file:
+        predictions = predict_answers(
+            model, dev, dev_dataset.num_examples, args.max_answer_length, args.n_best_size,
+        )
+
+        for answer in predictions:
+            print(answer, file=predictions_file)
+
     with open(os.path.join(logdir, "reading_comprehension.txt"), "w", encoding="utf-8") as predictions_file:
         # TODO: Predict the answers as strings, one per line.
         predictions = predict_answers(
