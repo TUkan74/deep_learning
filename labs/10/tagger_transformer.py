@@ -198,7 +198,7 @@ class Model(npfl138.TrainableModule):
             args.transformer_heads, args.transformer_dropout,
         )
 
-        # TODO(tagger_we): Create an output linear layer (`torch.nn.Linear`) processing the RNN output,
+        # TODO: Create an output linear layer (`torch.nn.Linear`) processing the Transformer output,
         # producing logits for tag prediction; `train.tags.string_vocab` is the tag vocabulary.
         self._output_layer = torch.nn.Linear(args.we_dim, len(train.tags.string_vocab))
 
