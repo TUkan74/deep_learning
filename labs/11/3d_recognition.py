@@ -13,14 +13,17 @@ from npfl138.datasets.modelnet import ModelNet
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
-parser.add_argument("--dropout", default=0.3, type=float, help="Dropout in the classifier.")
-parser.add_argument("--epochs", default=60, type=int, help="Number of epochs.")
+parser.add_argument("--dropout", default=0.2, type=float, help="Dropout in the classifier.")
+parser.add_argument("--epochs", default=90, type=int, help="Number of epochs.")
+parser.add_argument("--label_smoothing", default=0.05, type=float, help="Label smoothing.")
 parser.add_argument("--learning_rate", default=1e-3, type=float, help="Learning rate.")
 parser.add_argument("--modelnet", default=32, type=int, choices=[20, 32], help="ModelNet dimension.")
-parser.add_argument("--patience", default=10, type=int, help="Early stopping patience.")
+parser.add_argument("--patience", default=15, type=int, help="Early stopping patience.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=0, type=int, help="Maximum number of threads to use.")
-parser.add_argument("--weight_decay", default=1e-4, type=float, help="AdamW weight decay.")
+parser.add_argument("--tta", default=True, action=argparse.BooleanOptionalAction,
+                    help="Use rotation/flip test-time augmentation.")
+parser.add_argument("--weight_decay", default=5e-4, type=float, help="AdamW weight decay.")
 parser.add_argument("--workers", default=0, type=int, help="DataLoader worker processes.")
 
 
@@ -79,6 +82,29 @@ class Model(npfl138.TrainableModule):
         return self._model(grids)
 
 
+def predict_to_file(
+    model: Model, dataloader: torch.utils.data.DataLoader, output_path: str, args: argparse.Namespace
+) -> None:
+    model.eval()
+    with open(output_path, "w", encoding="utf-8") as predictions_file, torch.no_grad():
+        for grids, _ in dataloader:
+            grids = grids.to(model.device)
+
+            logits = torch.zeros(grids.shape[0], ModelNet.LABELS, device=model.device)
+            augmentations = 0
+            rotations = range(4) if args.tta else range(1)
+            for rotation in rotations:
+                rotated = torch.rot90(grids, rotation, dims=(-2, -1)) if rotation else grids
+                logits += model(rotated)
+                augmentations += 1
+                if args.tta:
+                    logits += model(torch.flip(rotated, dims=(-1,)))
+                    augmentations += 1
+
+            for prediction in (logits / augmentations).argmax(dim=1).cpu().tolist():
+                print(prediction, file=predictions_file)
+
+
 def main(args: argparse.Namespace) -> None:
     # Set the random seed and the number of threads.
     npfl138.startup(args.seed, args.threads)
@@ -115,7 +141,7 @@ def main(args: argparse.Namespace) -> None:
 
     model.configure(
         optimizer=torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay),
-        loss=torch.nn.CrossEntropyLoss(),
+        loss=torch.nn.CrossEntropyLoss(label_smoothing=args.label_smoothing),
         metrics={"accuracy": torchmetrics.Accuracy("multiclass", num_classes=ModelNet.LABELS)},
         logdir=logdir,
     )
@@ -126,15 +152,8 @@ def main(args: argparse.Namespace) -> None:
 
     # Generate test set annotations, but in `logdir` to allow parallel execution.
     os.makedirs(logdir, exist_ok=True)
-    with open(os.path.join(logdir, "3d_recognition_dev.txt"), "w", encoding="utf-8") as predictions_file:
-        for prediction in model.predict(dev, data_with_labels=True, console=0):
-            print(prediction.argmax().item(), file=predictions_file)
-
-    with open(os.path.join(logdir, "3d_recognition.txt"), "w", encoding="utf-8") as predictions_file:
-        # TODO: Perform the prediction on the test data. The line below assumes you have
-        # a dataloader `test` where the individual examples are `(grid, target)` pairs.
-        for prediction in model.predict(test, data_with_labels=True, console=0):
-            print(prediction.argmax().item(), file=predictions_file)
+    predict_to_file(model, dev, os.path.join(logdir, "3d_recognition_dev.txt"), args)
+    predict_to_file(model, test, os.path.join(logdir, "3d_recognition.txt"), args)
 
     if best_accuracy > float("-inf"):
         print(f"Best dev accuracy: {100 * best_accuracy:.2f}%")

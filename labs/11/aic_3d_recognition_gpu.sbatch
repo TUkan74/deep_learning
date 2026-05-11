@@ -14,7 +14,7 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/deep_learning}"
 VENV_DIR="${VENV_DIR:-$HOME/venvs/npfl138-2526}"
 PYTHON_BIN="$VENV_DIR/bin/python"
 MODELNET_DIM="${MODELNET_DIM:-32}"
-ARGS="${ARGS:---modelnet $MODELNET_DIM --epochs 60 --batch_size 64 --learning_rate 1e-3 --patience 10 --workers 2}"
+ARGS="${ARGS:---modelnet $MODELNET_DIM --epochs 90 --batch_size 64 --learning_rate 1e-3 --patience 15 --dropout 0.2 --weight_decay 5e-4 --label_smoothing 0.05 --tta --workers 2}"
 
 cd "$PROJECT_DIR"
 
