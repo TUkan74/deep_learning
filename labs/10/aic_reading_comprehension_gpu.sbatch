@@ -1,3 +1,4 @@
+
 #!/bin/bash
 #SBATCH -J readcomp
 #SBATCH -p gpu
