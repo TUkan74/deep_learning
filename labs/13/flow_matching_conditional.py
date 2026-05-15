@@ -68,7 +68,10 @@ class SinusoidalEmbedding(torch.nn.Module):
         #     `sin(2 * pi * inputs / 20 ** (2 * i / self.dim))`
         # - the value on index `[..., self.dim/2 + i]` should be
         #     `cos(2 * pi * inputs / 20 ** (2 * i / self.dim))`
-        embeddings = ...
+        indices = torch.arange(self.dim // 2, device=inputs.device, dtype=inputs.dtype)
+        scales = 20 ** (2 * indices / self.dim)
+        angles = 2 * torch.pi * inputs / scales
+        embeddings = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
 
         if npfl138.first_time("SinusoidalEmbedding.forward"):
             print(f"The torch.var of the first batch of embedded times: {torch.var(embeddings):.4f}")
@@ -98,13 +101,23 @@ class ResidualBlock(torch.nn.Module):
         #
         # As mentioned earlier, every convolutional layer before a GroupNorm layer
         # must not have a bias (it is provided by the group normalization).
-        ...
+        groups = max(1, min(width // 4, 16))
+        self._conv1 = torch.nn.Conv2d(width, width, kernel_size=3, padding="same", bias=False)
+        self._norm1 = torch.nn.GroupNorm(groups, width)
+        self._time = torch.nn.Linear(width, width)
+        self._conv2 = torch.nn.Conv2d(width, width, kernel_size=3, padding="same", bias=False)
+        self._norm2 = torch.nn.GroupNorm(groups, width)
+        self._norm2.weight.data.zero_()
+        self._activation = torch.nn.SiLU()
 
     def forward(self, images: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
         # TODO(flow_matching): Implement the forward pass of the residual block. The `times` has
         # shape `[batch_size, channels]` with `channels` equal to the number of
         # `images` channels, so it must be broadcasted to every image position.
-        result = ...
+        hidden = self._activation(self._norm1(self._conv1(images)))
+        hidden = hidden + self._activation(self._time(times))[:, :, None, None]
+        hidden = self._norm2(self._conv2(hidden))
+        result = images + hidden
 
         if npfl138.first_time("ResidualBlock.forward"):
             print(f"The torch.var of the first batch returned by ResidualBlock: {torch.var(result):.4f}")
@@ -118,14 +131,17 @@ class DownscalingBlock(torch.nn.Module):
         # TODO(flow_matching): The downscaling block starts with `residual_blocks` number of `ResidualBlock`s,
         # and then passes the result through a 3x3 convolution with `width << 1` channels,
         # stride 2, and padding 1.
-        ...
+        self._residual_blocks = torch.nn.ModuleList(ResidualBlock(width) for _ in range(residual_blocks))
+        self._downscale = torch.nn.Conv2d(width, width << 1, kernel_size=3, stride=2, padding=1)
 
     def forward(self, images: torch.Tensor, times: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # TODO(flow_matching): Implement the forward pass of the downscaling block, first computing `hidden` by passing
         # the input images through the residual blocks and then computing `downscaled` by processing
         # the residual block output through the downscaling convolution.
-        hidden = ...
-        downscaled = ...
+        hidden = images
+        for block in self._residual_blocks:
+            hidden = block(hidden, times)
+        downscaled = self._downscale(hidden)
 
         if npfl138.first_time("DownscalingBlock.forward"):
             print("The torch.var of the first batch returned by DownscalingBlock:",
@@ -142,11 +158,15 @@ class UpscalingBlock(torch.nn.Module):
         # from the downscaling block is passed through a 3x3 convolution with `width` channels
         # and the "same" padding. Finally, both results are added together and passed through
         # `residual_blocks` number of `ResidualBlock`s.
-        ...
+        self._upscale = torch.nn.ConvTranspose2d(width << 1, width, kernel_size=4, stride=2, padding=1)
+        self._skip = torch.nn.Conv2d(width, width, kernel_size=3, padding="same")
+        self._residual_blocks = torch.nn.ModuleList(ResidualBlock(width) for _ in range(residual_blocks))
 
     def forward(self, images: torch.Tensor, skip_connections: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
         # TODO(flow_matching): Implement the forward pass of the upscaling block.
-        result = ...
+        result = self._upscale(images) + self._skip(skip_connections)
+        for block in self._residual_blocks:
+            result = block(result, times)
 
         if npfl138.first_time("UpscalingBlock.forward"):
             print(f"The torch.var of the first batch returned by UpscalingBlock: {torch.var(result):.4f}")
@@ -155,7 +175,7 @@ class UpscalingBlock(torch.nn.Module):
 
 class UNet(torch.nn.Module):
     """The U-Net architecture used in the flow matching model."""
-    def __init__(self, channels: int, stage_blocks: int, stages: int) -> None:
+    def __init__(self, channels: int, stage_blocks: int, stages: int, downscale: int) -> None:
         super().__init__()
         # TODO(flow_matching): When processing the input images and the input times, start by
         # passing the times through the `SinusoidalEmbedding` layer with
@@ -177,7 +197,19 @@ class UNet(torch.nn.Module):
         #   from the corresponding downscaling block;
         # - finally, the result is passed through an output 3x3 convolution with
         #   `C` channels and the "same" padding.
-        ...
+        self._embedding = SinusoidalEmbedding(channels)
+        self._conditioning_upsample = torch.nn.Upsample(scale_factor=downscale)
+        self._initial = torch.nn.Conv2d(Image64Dataset.C * 2, channels, kernel_size=3, padding="same")
+        self._downscaling_blocks = torch.nn.ModuleList(
+            DownscalingBlock(stage_blocks, channels << stage) for stage in range(stages)
+        )
+        self._middle_blocks = torch.nn.ModuleList(
+            ResidualBlock(channels << stages) for _ in range(stage_blocks)
+        )
+        self._upscaling_blocks = torch.nn.ModuleList(
+            UpscalingBlock(stage_blocks, channels << stage) for stage in range(stages - 1, -1, -1)
+        )
+        self._output = torch.nn.Conv2d(channels, Image64Dataset.C, kernel_size=3, padding="same")
 
     def forward(self, images: torch.Tensor, conditioning: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass of the U-Net. Compared to the `flow_matching`
@@ -185,7 +217,18 @@ class UNet(torch.nn.Module):
         # to the size of the input images using a `torch.nn.Upsample` layer, and then
         # concatenating the input images and the upscaled conditioning along the channel
         # dimension, in this order. The rest of the computation is unchanged.
-        raise NotImplementedError()
+        times = self._embedding(times)
+        conditioning = self._conditioning_upsample(conditioning)
+        hidden = self._initial(torch.cat([images, conditioning], dim=1))
+        skip_connections = []
+        for block in self._downscaling_blocks:
+            hidden, skip = block(hidden, times)
+            skip_connections.append(skip)
+        for block in self._middle_blocks:
+            hidden = block(hidden, times)
+        for block, skip in zip(self._upscaling_blocks, reversed(skip_connections)):
+            hidden = block(hidden, skip, times)
+        return self._output(hidden)
 
 
 class FlowMatching(npfl138.TrainableModule):
@@ -193,7 +236,7 @@ class FlowMatching(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
         super().__init__()
         # TODO(flow_matching): Create the U-Net model with the required arguments.
-        self._model = UNet(...)
+        self._model = UNet(args.channels, args.stage_blocks, args.stages, args.downscale)
 
         self._ema_model = None  # We initialize the `self._ema_model` during the first update.
         self._ema_momentum = args.ema
@@ -233,21 +276,24 @@ class FlowMatching(npfl138.TrainableModule):
         # by downscaling both the height and the width of the normalized input images
         # by a factor of `self._downscale` using the `torch.nn.functional.avg_pool2d` method,
         # and then passing the downscaled conditioning as one of the inputs to the network.
-        ...
-
-        noisy_images = ...
+        normalized_images = self.normalize_image(images)
+        conditioning = torch.nn.functional.avg_pool2d(normalized_images, self._downscale)
+        times_image = times[:, :, None, None]
+        noisy_images = (1 - (1 - self._sigma_min) * times_image) * noises + times_image * normalized_images
         if npfl138.first_time("FlowMatching.train_step.1"):
             print(f"The torch.var of the first batch of noisy training images: {torch.var(noisy_images):.4f}")
 
-        predictions = ...
+        predictions = self._model(noisy_images, conditioning, times)
         if npfl138.first_time("FlowMatching.train_step.2"):
             print(f"The torch.var of the first batch of model predictions: {torch.var(predictions):.4f}")
 
-        targets = ...
+        targets = normalized_images - (1 - self._sigma_min) * noises
         if npfl138.first_time("FlowMatching.train_step.3"):
             print(f"The torch.var of the first batch of target outputs: {torch.var(targets):.4f}")
 
-        ...
+        loss = self.loss(predictions, targets)
+        self.optimizer.zero_grad()
+        loss.backward()
 
         with torch.no_grad():
             self.optimizer.step()
@@ -255,12 +301,12 @@ class FlowMatching(npfl138.TrainableModule):
             # TODO(flow_matching): If the EMA model is not initialized, create it as a copy of the current model
             # using `copy.deepcopy`. Also call `requires_grad_(False)` on the newly created model.
             if self._ema_model is None:
-                self._ema_model = ...
+                self._ema_model = copy.deepcopy(self._model).requires_grad_(False)
             for ema_variable, variable in zip(self._ema_model.parameters(), self._model.parameters()):
                 # TODO(flow_matching): Perform the exponential moving average, modifying the `ema_variable` in place
                 # by multiplying it by `self._ema_momentum` and adding the `variable` multiplied by
                 # `(1 - self._ema_momentum)`.
-                ...
+                ema_variable.mul_(self._ema_momentum).add_(variable, alpha=1 - self._ema_momentum)
             return {"loss": self.track_loss(loss)}
 
     @torch.no_grad()
@@ -278,6 +324,11 @@ class FlowMatching(npfl138.TrainableModule):
         #   i.e., all the inputs you passed to the model during this method.
         # TODO: Compared to `flow_matching`, you need to normalize the given `conditioning`
         # (using the `normalize_image` method) and then pass it to every `_ema_model` call.
+        conditioning = self.normalize_image(conditioning.to(self.device))
+        for step in range(steps):
+            times = torch.full((images.shape[0], 1), step / steps, device=images.device)
+            trajectory.append(images)
+            images = images + self._ema_model(images, conditioning, times) / steps
 
         # Apply the denormalization to the generated images and the trajectory.
         return self.denormalize_image(images), list(map(self.denormalize_image, trajectory))
@@ -297,7 +348,7 @@ def main(args: argparse.Namespace) -> dict[str, float]:
 
     # TODO: Use `torch.nn.functional.avg_pool2d` to downscale both the height and the width
     # of the `dev` images by the `args.downscale` factor, and store the result as `conditioning`.
-    conditioning = ...
+    conditioning = torch.nn.functional.avg_pool2d(dev, args.downscale)
 
     # Create the model.
     flow_matching = FlowMatching(args)

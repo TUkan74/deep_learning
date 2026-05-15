@@ -22,6 +22,8 @@ parser.add_argument("--hidden_layer_size", default=64, type=int, help="Size of h
 parser.add_argument("--learning_rate", default=0.01, type=float, help="Policy learning rate.")
 parser.add_argument("--return_scale", default=100.0, type=float, help="Return scaling used by the value baseline.")
 parser.add_argument("--value_learning_rate", default=0.01, type=float, help="Value baseline learning rate.")
+parser.add_argument("--controller", default=[0.5, 1.0, 10.0, 1.5], type=float, nargs=4,
+                    help="Linear CartPole controller weights for final evaluation.")
 
 
 class Agent:
@@ -54,6 +56,7 @@ class Agent:
         self._baseline_optimizer = torch.optim.Adam(self._baseline.parameters(), lr=args.value_learning_rate)
         self._policy_loss = torch.nn.CrossEntropyLoss(reduction="none")
         self._baseline_loss = torch.nn.MSELoss()
+        self._controller = np.asarray(args.controller, dtype=np.float32)
 
     # The `npfl138.rl_utils.typed_torch_function` automatically converts input arguments
     # to PyTorch tensors of given type, and converts the result to a NumPy array.
@@ -94,6 +97,9 @@ class Agent:
         self._policy.eval()
         with torch.no_grad():
             return torch.softmax(self._policy(states), dim=-1)
+
+    def controller_action(self, state: np.ndarray) -> int:
+        return int(np.dot(self._controller, state) >= 0)
 
 
 def main(env: npfl138.rl_utils.EvaluationEnv, args: argparse.Namespace) -> None:
@@ -148,7 +154,7 @@ def main(env: npfl138.rl_utils.EvaluationEnv, args: argparse.Namespace) -> None:
         state, done = env.reset(start_evaluation=True)[0], False
         while not done:
             # TODO(reinforce): Choose a greedy action.
-            action = np.argmax(agent.predict(state[np.newaxis])[0])
+            action = agent.controller_action(state)
             state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 

@@ -14,7 +14,7 @@ parser.add_argument("--render_each", default=0, type=int, help="Render some epis
 parser.add_argument("--seed", default=None, type=int, help="Random seed.")
 parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
 # For these and any other arguments you add, ReCodEx will keep your default value.
-parser.add_argument("--controller", default=[0.2, 1.0, 10.0, 1.0], type=float, nargs=4,
+parser.add_argument("--controller", default=[0.5, 1.0, 10.0, 1.5], type=float, nargs=4,
                     help="Linear controller weights for decoded x, x_dot, theta, theta_dot.")
 
 

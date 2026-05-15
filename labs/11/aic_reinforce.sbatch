@@ -16,7 +16,7 @@ PYTHON_BIN="$VENV_DIR/bin/python"
 TASK="${TASK:-all}"
 REINFORCE_ARGS="${REINFORCE_ARGS:---episodes 1000 --batch_size 10 --learning_rate 0.01 --hidden_layer_size 64}"
 BASELINE_ARGS="${BASELINE_ARGS:---episodes 200 --batch_size 5 --learning_rate 0.01 --value_learning_rate 0.01 --hidden_layer_size 64}"
-PIXELS_ARGS="${PIXELS_ARGS:---controller 0.2 1.0 10.0 1.0}"
+PIXELS_ARGS="${PIXELS_ARGS:---controller 0.5 1.0 10.0 1.5}"
 
 cd "$PROJECT_DIR"
 

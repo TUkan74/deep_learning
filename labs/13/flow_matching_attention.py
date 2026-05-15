@@ -69,7 +69,10 @@ class SinusoidalEmbedding(torch.nn.Module):
         #     `sin(2 * pi * inputs / 20 ** (2 * i / self.dim))`
         # - the value on index `[..., self.dim/2 + i]` should be
         #     `cos(2 * pi * inputs / 20 ** (2 * i / self.dim))`
-        embeddings = ...
+        indices = torch.arange(self.dim // 2, device=inputs.device, dtype=inputs.dtype)
+        scales = 20 ** (2 * indices / self.dim)
+        angles = 2 * torch.pi * inputs / scales
+        embeddings = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
 
         if npfl138.first_time("SinusoidalEmbedding.forward"):
             print(f"The torch.var of the first batch of embedded times: {torch.var(embeddings):.4f}")
@@ -99,13 +102,23 @@ class ResidualBlock(torch.nn.Module):
         #
         # As mentioned earlier, every convolutional layer before a GroupNorm layer
         # must not have a bias (it is provided by the group normalization).
-        ...
+        groups = max(1, min(width // 4, 16))
+        self._conv1 = torch.nn.Conv2d(width, width, kernel_size=3, padding="same", bias=False)
+        self._norm1 = torch.nn.GroupNorm(groups, width)
+        self._time = torch.nn.Linear(width, width)
+        self._conv2 = torch.nn.Conv2d(width, width, kernel_size=3, padding="same", bias=False)
+        self._norm2 = torch.nn.GroupNorm(groups, width)
+        self._norm2.weight.data.zero_()
+        self._activation = torch.nn.SiLU()
 
     def forward(self, images: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
         # TODO(flow_matching): Implement the forward pass of the residual block. The `times` has
         # shape `[batch_size, channels]` with `channels` equal to the number of
         # `images` channels, so it must be broadcasted to every image position.
-        result = ...
+        hidden = self._activation(self._norm1(self._conv1(images)))
+        hidden = hidden + self._activation(self._time(times))[:, :, None, None]
+        hidden = self._norm2(self._conv2(hidden))
+        result = images + hidden
 
         if npfl138.first_time("ResidualBlock.forward"):
             print(f"The torch.var of the first batch returned by ResidualBlock: {torch.var(result):.4f}")
@@ -127,11 +140,17 @@ class SelfAttentionBlock(torch.nn.Module):
         #   the channel dimension back to the front and reshaping suitably).
         # - Finally, the sum of the original input and the result of the
         #   reshaped attention is returned.
-        ...
+        groups = max(1, min(channels // 4, 16))
+        self._norm = torch.nn.GroupNorm(groups, channels)
+        self._attention = torch.nn.MultiheadAttention(channels, heads, batch_first=True)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass of the self-attention block.
-        result = ...
+        batch_size, channels, height, width = inputs.shape
+        sequence = self._norm(inputs).movedim(1, -1).reshape(batch_size, height * width, channels)
+        attended, _ = self._attention(sequence, sequence, sequence, need_weights=False)
+        attended = attended.reshape(batch_size, height, width, channels).movedim(-1, 1)
+        result = inputs + attended
 
         if npfl138.first_time("SelfAttentionBlock.forward"):
             print(f"The torch.var of the first batch returned by SelfAttentionBlock: {torch.var(result):.4f}")
@@ -147,14 +166,20 @@ class DownscalingBlock(torch.nn.Module):
         # `width` channels and `attention_heads` heads is called.
         # TODO(flow_matching): Finally, the result is passed through a 3x3 convolution with
         # `width << 1` channels, stride 2, and padding 1.
-        ...
+        self._residual_blocks = torch.nn.ModuleList(ResidualBlock(width) for _ in range(residual_blocks))
+        self._attention = SelfAttentionBlock(width, attention_heads) if attention_heads is not None else None
+        self._downscale = torch.nn.Conv2d(width, width << 1, kernel_size=3, stride=2, padding=1)
 
     def forward(self, images: torch.Tensor, times: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # TODO: Implement the forward pass of the downscaling block, first computing `hidden` by passing
         # the input images through the residual blocks and (if present) the self-attention block,
         # and then computing `downscaled` by processing the result through the downscaling convolution.
-        hidden = ...
-        downscaled = ...
+        hidden = images
+        for block in self._residual_blocks:
+            hidden = block(hidden, times)
+        if self._attention is not None:
+            hidden = self._attention(hidden)
+        downscaled = self._downscale(hidden)
 
         if npfl138.first_time("DownscalingBlock.forward"):
             print("The torch.var of the first batch returned by DownscalingBlock:",
@@ -173,11 +198,18 @@ class UpscalingBlock(torch.nn.Module):
         # `residual_blocks` number of `ResidualBlock`s.
         # TODO: Lastly, if `attention_heads` is not None, a SelfAttentionBlock with the
         # `width` channels and `attention_heads` heads is called.
-        ...
+        self._upscale = torch.nn.ConvTranspose2d(width << 1, width, kernel_size=4, stride=2, padding=1)
+        self._skip = torch.nn.Conv2d(width, width, kernel_size=3, padding="same")
+        self._residual_blocks = torch.nn.ModuleList(ResidualBlock(width) for _ in range(residual_blocks))
+        self._attention = SelfAttentionBlock(width, attention_heads) if attention_heads is not None else None
 
     def forward(self, images: torch.Tensor, skip_connections: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass of the upscaling block.
-        result = ...
+        result = self._upscale(images) + self._skip(skip_connections)
+        for block in self._residual_blocks:
+            result = block(result, times)
+        if self._attention is not None:
+            result = self._attention(result)
 
         if npfl138.first_time("UpscalingBlock.forward"):
             print(f"The torch.var of the first batch returned by UpscalingBlock: {torch.var(result):.4f}")
@@ -217,11 +249,43 @@ class UNet(torch.nn.Module):
         #   heads should be used (and created) right after the middle block;
         # - the first `attention_stages` number of the upscaling blocks should employ
         #   a self-attention block.
-        ...
+        self._embedding = SinusoidalEmbedding(channels)
+        self._initial = torch.nn.Conv2d(Image64Dataset.C, channels, kernel_size=3, padding="same")
+        self._downscaling_blocks = torch.nn.ModuleList(
+            DownscalingBlock(
+                stage_blocks,
+                channels << stage,
+                attention_heads if stage >= stages - attention_stages else None,
+            )
+            for stage in range(stages)
+        )
+        self._middle_blocks = torch.nn.ModuleList(
+            ResidualBlock(channels << stages) for _ in range(stage_blocks)
+        )
+        self._middle_attention = SelfAttentionBlock(channels << stages, attention_heads)
+        self._upscaling_blocks = torch.nn.ModuleList(
+            UpscalingBlock(
+                stage_blocks,
+                channels << stage,
+                attention_heads if stages - 1 - stage < attention_stages else None,
+            )
+            for stage in range(stages - 1, -1, -1)
+        )
+        self._output = torch.nn.Conv2d(channels, Image64Dataset.C, kernel_size=3, padding="same")
 
     def forward(self, images: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
-        # TODO: Implement the forward pass of the U-Net.
-        raise NotImplementedError()
+        times = self._embedding(times)
+        hidden = self._initial(images)
+        skip_connections = []
+        for block in self._downscaling_blocks:
+            hidden, skip = block(hidden, times)
+            skip_connections.append(skip)
+        for block in self._middle_blocks:
+            hidden = block(hidden, times)
+        hidden = self._middle_attention(hidden)
+        for block, skip in zip(self._upscaling_blocks, reversed(skip_connections)):
+            hidden = block(hidden, skip, times)
+        return self._output(hidden)
 
 
 class FlowMatching(npfl138.TrainableModule):
@@ -229,7 +293,9 @@ class FlowMatching(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
         super().__init__()
         # TODO: Create the U-Net model with the required arguments.
-        self._model = UNet(...)
+        self._model = UNet(
+            args.channels, args.stage_blocks, args.stages, args.attention_stages, args.attention_heads
+        )
 
         self._ema_model = None  # We initialize the `self._ema_model` during the first update.
         self._ema_momentum = args.ema
@@ -264,21 +330,23 @@ class FlowMatching(npfl138.TrainableModule):
         # - Finally, compute the loss using the conditional flow matching objective,
         #   utilizing the given PyTorch loss stored in `self.loss`.
         # Once the forward pass is completed, compute the gradient of the loss.
-        ...
-
-        noisy_images = ...
+        normalized_images = self.normalize_image(images)
+        times_image = times[:, :, None, None]
+        noisy_images = (1 - (1 - self._sigma_min) * times_image) * noises + times_image * normalized_images
         if npfl138.first_time("FlowMatching.train_step.1"):
             print(f"The torch.var of the first batch of noisy training images: {torch.var(noisy_images):.4f}")
 
-        predictions = ...
+        predictions = self._model(noisy_images, times)
         if npfl138.first_time("FlowMatching.train_step.2"):
             print(f"The torch.var of the first batch of model predictions: {torch.var(predictions):.4f}")
 
-        targets = ...
+        targets = normalized_images - (1 - self._sigma_min) * noises
         if npfl138.first_time("FlowMatching.train_step.3"):
             print(f"The torch.var of the first batch of target outputs: {torch.var(targets):.4f}")
 
-        ...
+        loss = self.loss(predictions, targets)
+        self.optimizer.zero_grad()
+        loss.backward()
 
         with torch.no_grad():
             self.optimizer.step()
@@ -286,12 +354,12 @@ class FlowMatching(npfl138.TrainableModule):
             # TODO(flow_matching): If the EMA model is not initialized, create it as a copy of the current model
             # using `copy.deepcopy`. Also call `requires_grad_(False)` on the newly created model.
             if self._ema_model is None:
-                self._ema_model = ...
+                self._ema_model = copy.deepcopy(self._model).requires_grad_(False)
             for ema_variable, variable in zip(self._ema_model.parameters(), self._model.parameters()):
                 # TODO(flow_matching): Perform the exponential moving average, modifying the `ema_variable` in place
                 # by multiplying it by `self._ema_momentum` and adding the `variable` multiplied by
                 # `(1 - self._ema_momentum)`.
-                ...
+                ema_variable.mul_(self._ema_momentum).add_(variable, alpha=1 - self._ema_momentum)
             return {"loss": self.track_loss(loss)}
 
     @torch.no_grad()
@@ -305,6 +373,10 @@ class FlowMatching(npfl138.TrainableModule):
         # - `images`, which are the final generated images, and
         # - `trajectory`, which is a list of the intermediate images x_0, x_{1/T}, ...,
         #   i.e., all the inputs you passed to the model during this method.
+        for step in range(steps):
+            times = torch.full((images.shape[0], 1), step / steps, device=images.device)
+            trajectory.append(images)
+            images = images + self._ema_model(images, times) / steps
 
         # Apply the denormalization to the generated images and the trajectory.
         return self.denormalize_image(images), list(map(self.denormalize_image, trajectory))
